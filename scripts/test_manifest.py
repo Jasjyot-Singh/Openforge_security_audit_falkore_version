@@ -72,7 +72,7 @@ async def evaluate_fixture(fixture_meta: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         # 1. Spin up client and take snapshot
-        client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=3.0)
+        client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=8.0)
         snapshot = await client.fetch_snapshot(fixture_name)
 
         # 2. S1 Metadata & Prompt Injection Scan

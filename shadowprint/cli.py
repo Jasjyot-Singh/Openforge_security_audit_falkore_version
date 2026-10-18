@@ -73,6 +73,18 @@ def find_entrypoint(target_path: Path) -> Optional[Path]:
     return None
 
 
+def resolve_target_path(target: str) -> Path:
+    """Resolves target path against current working directory or PROJECT_ROOT."""
+    p = Path(target)
+    if p.exists():
+        return p.resolve()
+    candidate = PROJECT_ROOT / target
+    if candidate.exists():
+        return candidate.resolve()
+    return p.resolve()
+
+
+
 async def run_dynamic_checks(
     entrypoint: Path, server_name: str, target_dir: Path
 ) -> Tuple[List[Finding], Optional[Snapshot]]:
@@ -82,7 +94,7 @@ async def run_dynamic_checks(
     findings: List[Finding] = []
     live_snapshot: Optional[Snapshot] = None
 
-    client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=3.0)
+    client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=8.0)
     try:
         live_snapshot = await client.fetch_snapshot(server_name)
     except Exception as e:
@@ -132,7 +144,7 @@ def audit(
     """
     Run an end-to-end security audit against a target MCP server across Engines S0–S3.
     """
-    target_path = Path(target).resolve()
+    target_path = resolve_target_path(target)
     if not target_path.exists():
         console.print(f"[bold red]Error:[/bold red] Target path '{target}' does not exist.")
         raise typer.Exit(code=1)
@@ -253,7 +265,7 @@ def approve(
     Approve an audited MCP server and save its cryptographic baseline SHA-256 pin to SQLite.
     """
     render_banner()
-    target_path = Path(target).resolve()
+    target_path = resolve_target_path(target)
     if not target_path.exists():
         console.print(f"[bold red]Error:[/bold red] Target path '{target}' does not exist.")
         raise typer.Exit(code=1)
@@ -284,7 +296,7 @@ def approve(
         raise typer.Exit(code=1)
 
     async def _do_approve():
-        client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=3.0)
+        client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=8.0)
         snapshot = await client.fetch_snapshot(server_name)
         def_hash = ThreeLayerHasher.compute_definition_hash(snapshot.tools)
         art_hash = ThreeLayerHasher.compute_artifact_hash(target_dir)
@@ -364,7 +376,10 @@ def watch(
     Monitor an approved MCP server in real-time for live schema mutations and rug-pulls.
     """
     render_banner()
-    target_path = Path(target).resolve()
+    target_path = resolve_target_path(target)
+    if not target_path.exists():
+        console.print(f"[bold red]Error:[/bold red] Target path '{target}' does not exist.")
+        raise typer.Exit(code=1)
     server_name = target_path.name if target_path.is_dir() else target_path.parent.name
     target_dir = target_path if target_path.is_dir() else target_path.parent
     entrypoint = find_entrypoint(target_path)
@@ -387,7 +402,7 @@ def watch(
         f"[dim]Press Ctrl+C to stop.[/dim]\n"
     )
 
-    client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=3.0)
+    client = GuardedMCPClient(command=sys.executable, args=[str(entrypoint)], timeout=8.0)
 
     def on_drift_detected(findings: List[Finding]):
         for f in findings:

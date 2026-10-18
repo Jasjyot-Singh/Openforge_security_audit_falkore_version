@@ -30,6 +30,8 @@ from shadowprint.graph.queries import ExploitChainQueryEngine
 from shadowprint.graph.agent import SecurityTriageAgent
 from shadowprint.graph.visualizer import GraphVisualizer
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+
 console = Console(legacy_windows=False)
 graph_app = typer.Typer(
     name="graph",
@@ -39,10 +41,15 @@ graph_app = typer.Typer(
 
 
 def _resolve_target(target: str) -> Tuple[Path, str, Path]:
-    target_path = Path(target).resolve()
+    target_path = Path(target)
     if not target_path.exists():
-        console.print(f"[bold red]Error:[/bold red] Target path '{target}' does not exist.")
-        raise typer.Exit(code=1)
+        candidate = PROJECT_ROOT / target
+        if candidate.exists():
+            target_path = candidate
+        else:
+            console.print(f"[bold red]Error:[/bold red] Target path '{target}' does not exist.")
+            raise typer.Exit(code=1)
+    target_path = target_path.resolve()
     server_name = target_path.name if target_path.is_dir() else target_path.parent.name
     target_dir = target_path if target_path.is_dir() else target_path.parent
     return target_path, server_name, target_dir

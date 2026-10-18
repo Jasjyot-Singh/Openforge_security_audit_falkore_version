@@ -43,7 +43,13 @@ def run_bandit(target_path: str, server_name: str = "target_server") -> List[Fin
     Executes Bandit against target_path and transforms raw findings into
     standardized Finding instances.
     """
-    target = os.path.abspath(target_path)
+    if not os.path.isabs(target_path):
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        candidate = os.path.join(project_root, target_path)
+        target = os.path.abspath(candidate if os.path.exists(candidate) else target_path)
+    else:
+        target = os.path.abspath(target_path)
+
     if not os.path.exists(target):
         return []
 
@@ -66,12 +72,13 @@ def run_bandit(target_path: str, server_name: str = "target_server") -> List[Fin
     try:
         proc = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=30
+            timeout=60
         )
         raw_output = proc.stdout
     except Exception as e:

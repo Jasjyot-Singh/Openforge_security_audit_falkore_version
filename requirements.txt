@@ -16,3 +16,4 @@ jschema-to-python==1.2.3
 PyYAML==6.0.3
 httpx==0.28.1
 uvicorn==0.54.0
+falkordb>=1.8.0

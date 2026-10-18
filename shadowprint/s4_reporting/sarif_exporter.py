@@ -43,7 +43,7 @@ def export_to_sarif(report: AuditReport, output_file: Optional[str] = None) -> D
                 },
                 "properties": {
                     "precision": "high" if f.confidence == "confirmed" else "medium",
-                    "security-severity": "9.0" if f.severity in ("critical", "high") else "5.0"
+                    "security-severity": "9.5" if f.severity == "critical" else ("8.0" if f.severity == "high" else ("5.0" if f.severity == "medium" else "2.0"))
                 }
             }
 
@@ -73,6 +73,7 @@ def export_to_sarif(report: AuditReport, output_file: Optional[str] = None) -> D
             "message": {"text": f"[{f.engine}] {f.evidence}"},
             "locations": locations,
             "properties": {
+                "severity": f.severity,
                 "engine": f.engine,
                 "assessment": f.assessment,
                 "confidence": f.confidence,

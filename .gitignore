@@ -40,3 +40,6 @@ desktop.ini
 # Environment Secrets (Never commit)
 .env
 *.env
+
+# Local AI assistant / IDE rules
+.agents/

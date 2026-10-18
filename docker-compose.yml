@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   falkordb:
     image: falkordb/falkordb:latest
@@ -11,6 +9,29 @@ services:
       - FALKORDB_ARGS=--save ""
     volumes:
       - falkordb-data:/data
+    networks:
+      - shadowprint-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: shadowprint-app
+    ports:
+      - "8080:8080"
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - falkordb
+    restart: unless-stopped
+    networks:
+      - shadowprint-net
 
 volumes:
   falkordb-data:
+
+networks:
+  shadowprint-net:
+    driver: bridge

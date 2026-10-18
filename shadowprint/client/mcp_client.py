@@ -25,7 +25,7 @@ class GuardedMCPClient:
         self,
         command: str,
         args: Optional[List[str]] = None,
-        timeout: float = 5.0,
+        timeout: float = 8.0,
         max_message_bytes: int = 1_048_576,  # 1 MB
     ):
         self.command = command

@@ -4,6 +4,7 @@ Provides thread-safe access to the FalkorDB GraphBLAS engine with Cypher paramet
 strict label/relation allowlisting, and a headless test double for unit testing.
 """
 
+import os
 import time
 import logging
 from typing import Dict, Any, List, Optional, Set
@@ -144,15 +145,15 @@ class FalkorDBClient:
 
     def __init__(
         self,
-        host: str = "localhost",
-        port: int = 6379,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
         graph_name: str = "shadowprint_ekg",
         password: Optional[str] = None,
         use_test_double: bool = False,
         require_live: bool = False,
     ):
-        self.host = host
-        self.port = port
+        self.host = host if host is not None else os.getenv("FALKORDB_HOST", "localhost")
+        self.port = port if port is not None else int(os.getenv("FALKORDB_PORT", "6379"))
         self.graph_name = graph_name
         self.password = password
         self.use_test_double = use_test_double

@@ -14,6 +14,36 @@ By integrating **FalkorDB**—the high-performance, GraphBLAS-powered graph data
 
 ---
 
+## 🚀 Quick Start (Demo & Deployment)
+
+> **Complete Execution & Deployment Guide:** See **[RUNNING.md](RUNNING.md)** for detailed local, Docker, and judge demo workflows.
+
+### 1. Launch the System & Web Dashboard
+- **One-Click Local Launcher (Windows / macOS / Linux):**
+  ```bash
+  python start.py
+  ```
+  *(Or double-click `start.bat` on Windows / `bash start.sh` on macOS/Linux)*  
+  *Validates environment, generates fresh report data, handles ports, and launches the interactive dashboard at **[http://localhost:8080](http://localhost:8080)**.*
+
+- **Full Containerized Run (Docker Compose):**
+  ```bash
+  docker compose up --build
+  ```
+  *Spins up live FalkorDB on port 6379 and the Shadowprint App on port 8080 with zero local Python setup required.*
+
+### 2. Core Judge Demo CLI Commands (Copy & Paste)
+| Step | Command | What It Demonstrates |
+|---|---|---|
+| **1. Vulnerability Audit** | `python -m shadowprint.cli audit fixtures/vulnerable_runner` | Catches 7 flaws (1 Critical, 3 High, 2 Med, 1 Low). Emits SARIF & Markdown. |
+| **2. Clean Control (0 FP)** | `python -m shadowprint.cli audit fixtures/clean_notes` | Validates 0 false positives. Clean green `[PASS]` status. |
+| **3. Benchmark Scorecard** | `python -m shadowprint.cli scorecard` | Automated 7-fixture benchmark recall matrix (**100% Core Recall Guaranteed**). |
+| **4. AI Triage Agent (Track 01)** | `python -m shadowprint.cli graph triage fixtures/compound_exploit_server --use-test-double` | Autonomous Security Triage Agent reasoning over FalkorDB connected graph. |
+| **5. Live Rug-Pull Watcher** | `python -m shadowprint.cli watch fixtures/clean_notes --max-cycles 3 --interval 0.5` | Sub-second real-time polling detecting live schema mutations against SQLite pin. |
+| **6. Interactive Demo Harness** | `python scripts/manual_demo.py all` | Zero-setup interactive verification: live rug-pull diff + canary theft + SQLite pin. |
+
+---
+
 ## 🏆 Hackathon Track Alignment
 
 ### 🕵️ Primary Track: Track 01 — Agents That Act on Connected Data

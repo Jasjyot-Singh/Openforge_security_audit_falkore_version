@@ -23,6 +23,8 @@
 | [ADR-009](#adr-009-balanced-5050-ownership-swap-reporting-vs-ai-runtime) | Balanced 50/50 Ownership Swap (Reporting vs. AI Runtime) | **ACCEPTED** | Jasjyot owns all S4; Gaurang owns Ollama Qwen3 + runtime backend |
 | [ADR-010](#adr-010-guarded-least-capability-stdio-mcp-client) | Guarded Least-Capability Stdio MCP Client | **ACCEPTED** | Enforces 5s timeouts and rejects untrusted sampling/prompt requests |
 | [ADR-011](#adr-011-universal-pydantic-finding-contract-with-cwe-mapping) | Universal Pydantic `Finding` Contract with CWE Mapping | **ACCEPTED** | Frozen schema compatibility across S0, S1, S2, S3, CLI, and SARIF |
+| [ADR-012](#adr-012-falkordb-graphblas-exploit-knowledge-graph-ingestion) | FalkorDB GraphBLAS Exploit Knowledge Graph Ingestion | **ACCEPTED** | Parameterized Cypher, multi-hop reachability in <1ms |
+| [ADR-013](#adr-013-autonomous-security-triage-agent-for-connected-data) | Autonomous Security Triage Agent for Connected Data | **ACCEPTED** | Evidence-gated registry blocking, patch generation, and restraint |
 
 ---
 
@@ -150,9 +152,29 @@
 
 ### ADR-011: Universal Pydantic `Finding` Contract with CWE Mapping
 * **Context:** The 5 detection engines (Static AST, Secrets, Metadata Regex, Ollama AI, Syscall Prober, Integrity Differ) produce disparate outputs. Downstream tools (Rich UI, Markdown report, SARIF exporter) need a single, consistent representation.
-* **Decision:** Freeze a single universal Pydantic schema in [shadowprint/models.py](file:///d:/ShadowPrint/Shadowprint/shadowprint/models.py):
+* **Decision:** Freeze a single universal Pydantic schema in [shadowprint/models.py](file:///d:/Falkon/Openforge_security_audit_falkore_version/shadowprint/models.py):
   * Fields: `id`, `engine` (`S0`|`S1`|`S2`|`S3`), `target`, `tool`, `category`, `severity` (`critical`|`high`|`medium`|`low`|`info`), `assessment` (`FAIL`|`FLAGGED`|`PASS`|`NOT_ASSESSED`), `confidence` (`confirmed`|`corroborated`|`heuristic`), `evidence_basis`, `location` (`file`, `line`), `claim`, `evidence`, `remediation`, `raw_result_ref`.
   * Every finding includes canonical CWE mappings (e.g., CWE-78 for command injection, CWE-798 for hardcoded credentials, CWE-200 for canary exfiltration).
 * **Alternatives Considered:**
   * *Engine-specific output dictionaries:* Rejected due to brittle glue code and high risk of serialization breakage.
 * **Consequences:** 100% type safety. Seamless conversion to SARIF 2.1.0 for GitHub Advanced Security ingestion.
+
+---
+
+### ADR-012: FalkorDB GraphBLAS Exploit Knowledge Graph Ingestion
+* **Context:** Isolated vulnerability scanners cannot detect multi-hop attacks where a prompt injection in S1 taints a tool parameter that flows into an AST sink in S0, which reads a canary honeytoken and exfiltrates it via an S2 network socket.
+* **Decision:** Implement Engine S5 using **FalkorDB** as the unified Exploit Knowledge Graph (EKG). All findings, AST sinks, tools, honeytokens, and network endpoints are ingested via strict parameterized Cypher queries with static allowlists against Cypher injection.
+* **Alternatives Considered:**
+  * *Neo4j:* Rejected due to heavy JVM memory footprint and slow cold-boot times.
+  * *Relational SQL joins:* Rejected because variable-length multi-hop path traversals (`[*1..4]`) are prohibitively slow in relational databases.
+* **Consequences:** Multi-hop reachability analysis executes in $<1$ ms via FalkorDB GraphBLAS sparse matrix linear algebra.
+
+---
+
+### ADR-013: Autonomous Security Triage Agent for Connected Data (Track 01)
+* **Context:** Hackathon Track 01 requires autonomous agents that act on connected graph data. Security decisions must not be passive alerts; they must actively enforce registry policies and remediate code.
+* **Decision:** Implement `SecurityTriageAgent` in [shadowprint/graph/agent.py](file:///d:/Falkon/Openforge_security_audit_falkore_version/shadowprint/graph/agent.py). The agent uses Cypher tools (`tool_trace_exploit_chains`, `tool_compute_blast_radius`, `tool_query_graph_topology`) to evaluate attack lineage. When critical multi-hop chains are verified, it executes real enforcement by adding the server to `shadowprint_denylist.json` and emitting an atomic remediation patch (`output/remediation_{server}.patch`). When scanning clean control servers, it exercises full restraint (`APPROVE_SERVER`).
+* **Alternatives Considered:**
+  * *Static threshold rules without agentic reasoning:* Rejected because static thresholds cannot distinguish between isolated high findings and verified end-to-end exploit pathways.
+* **Consequences:** Satisfies all requirements of FalkorDB Track 01 (*Agents That Act on Connected Data*). Provides verifiable proof of real action and restraint.
+

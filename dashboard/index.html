@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Shadowprint MCP Security Auditor — Interactive Dashboard showing security audit results, vulnerability findings, benchmark scorecard, and FalkorDB graph triage intelligence.">
+    <title>Shadowprint — Security Audit Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Animated background particles -->
+    <div class="bg-particles" id="bgParticles"></div>
+
+    <!-- Top Navigation -->
+    <nav class="top-nav" id="topNav">
+        <div class="nav-brand">
+            <span class="brand-icon">🛡️</span>
+            <span class="brand-text">SHADOWPRINT</span>
+            <span class="brand-badge">v2.0</span>
+        </div>
+        <div class="nav-links">
+            <a href="#overview" class="nav-link active" data-section="overview">Overview</a>
+            <a href="#demo-explorer" class="nav-link" data-section="demo-explorer">Demo MCP Console</a>
+            <a href="#audits" class="nav-link" data-section="audits">Audit Reports</a>
+            <a href="#scorecard" class="nav-link" data-section="scorecard">Scorecard</a>
+            <a href="#triage" class="nav-link" data-section="triage">Graph Triage</a>
+            <a href="#engines" class="nav-link" data-section="engines">Engines</a>
+        </div>
+        <div class="nav-status">
+            <span class="status-dot" id="statusDot"></span>
+            <span class="status-text" id="statusText">Loading...</span>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero-section" id="heroSection">
+        <div class="hero-content">
+            <div class="hero-badge">100% OFFLINE &amp; AIRGAPPED</div>
+            <h1 class="hero-title">Security Audit <span class="gradient-text">Dashboard</span></h1>
+            <p class="hero-subtitle">Model Context Protocol Security Auditor — Every server leaves a trace.</p>
+            <div class="hero-stats" id="heroStats">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+        <!-- Section: Overview -->
+        <section class="section" id="overview">
+            <div class="section-header">
+                <h2 class="section-title">Executive Overview</h2>
+                <p class="section-desc">Real-time security posture across all audited MCP servers</p>
+            </div>
+            <div class="overview-grid" id="overviewGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Section: Demo MCP Server Explorer & Live Console Simulator -->
+        <section class="section" id="demo-explorer">
+            <div class="section-header">
+                <div class="section-header-tag">JUDGE DEMONSTRATION HARNESS</div>
+                <h2 class="section-title">Demo MCP Server Explorer &amp; <span class="gradient-text">Live Console</span></h2>
+                <p class="section-desc">Select any of our custom-built demo MCP servers to inspect planted attack vectors and view authentic system console output</p>
+            </div>
+
+            <!-- MCP Selector Carousel / Pills -->
+            <div class="mcp-selector-wrap">
+                <div class="mcp-selector-grid" id="mcpSelectorGrid">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+
+            <!-- Active MCP Viewer Container -->
+            <div class="mcp-viewer-container" id="mcpViewerContainer">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Section: Audit Reports -->
+        <section class="section" id="audits">
+            <div class="section-header">
+                <h2 class="section-title">Detailed Audit Reports</h2>
+                <p class="section-desc">SARIF-based findings with severity breakdown and remediation guidance</p>
+            </div>
+            <div class="audit-tabs" id="auditTabs">
+                <!-- Populated by JS -->
+            </div>
+            <div class="audit-content" id="auditContent">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Section: Scorecard -->
+        <section class="section" id="scorecard">
+            <div class="section-header">
+                <h2 class="section-title">Benchmark Recall Scorecard</h2>
+                <p class="section-desc">Automated 7-fixture recall validation with precision metrics</p>
+            </div>
+            <div class="scorecard-summary" id="scorecardSummary">
+                <!-- Populated by JS -->
+            </div>
+            <div class="scorecard-table-wrap" id="scorecardTable">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Section: Graph Triage -->
+        <section class="section" id="triage">
+            <div class="section-header">
+                <h2 class="section-title">FalkorDB Graph Intelligence &amp; Triage</h2>
+                <p class="section-desc">Autonomous AI Security Triage Agent — Multi-hop exploit chain reasoning</p>
+            </div>
+            <div class="triage-grid" id="triageGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+        <!-- Section: Engines -->
+        <section class="section" id="engines">
+            <div class="section-header">
+                <h2 class="section-title">Detection Engine Architecture</h2>
+                <p class="section-desc">Five-dimension evidence chain methodology</p>
+            </div>
+            <div class="engines-grid" id="enginesGrid">
+                <!-- Populated by JS -->
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-brand">
+                <span class="brand-icon">🛡️</span> Shadowprint v2.0.0 — FalkorDB Edition
+            </div>
+            <div class="footer-info">
+                <span>Track 01: Agents That Act on Connected Data</span>
+                <span class="footer-sep">•</span>
+                <span>Co-Builders: Jasjyot Singh & Gaurang Udgirkar</span>
+            </div>
+            <div class="footer-info">
+                <span id="generatedAt">—</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
