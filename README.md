@@ -1,109 +1,197 @@
-# Shadowprint — MCP Server Security Auditor
+# 🕸️ SHADOWPRINT — Graph-Native MCP Security Auditor & Autonomous Triage Platform
 
-> *"Every server leaves a trace."*
+> *"Every server leaves a trace. Every attack leaves a graph."*
 
-Shadowprint is an evidence-first, 100% offline security auditor for **Model Context Protocol (MCP)** servers. It bridges the gap between what an MCP server claims to do, what its code implements, how it behaves at runtime inside an isolated container, and how its definitions drift over time:
+[![FalkorDB Hackathon](https://img.shields.io/badge/FalkorDB_Hackathon-Track_01:_Agents_That_Act_on_Connected_Data-red.svg)](https://github.com/Jasjyot-Singh/Openforge_security_audit_falkore_version)
+[![Track 02 Bonus](https://img.shields.io/badge/Bonus_Track_02-Agent_Memory_%26_Coordination-purple.svg)](https://github.com/Jasjyot-Singh/Openforge_security_audit_falkore_version)
+[![Test Suite](https://img.shields.io/badge/Tests-53%20Passed-brightgreen.svg)](https://github.com/Jasjyot-Singh/Openforge_security_audit_falkore_version)
+[![Graph Backend](https://img.shields.io/badge/Graph_Engine-FalkorDB_GraphBLAS_%2B_Airgapped_Fallback-blue.svg)](https://github.com/Jasjyot-Singh/Openforge_security_audit_falkore_version)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-$$\text{Claim} \longleftrightarrow \text{Code} \longleftrightarrow \text{Runtime} \longleftrightarrow \text{Drift}$$
+**Shadowprint** is an enterprise-grade, 100% offline security auditing and graph intelligence platform for **Model Context Protocol (MCP)** servers. 
 
----
-
-## 👥 The Team & Work Division
-
-* **Track:** Track 1: Open Weight AI & Open Source Tools
-* **Team:** Qodex
-* **Co-Builders:**
-  * **Jasjyot Singh (Team Lead):** S0 Static Code Analysis, S1 Metadata Regex/Deterministic Rules, Deduplication Normalizer, Unified Reporting & UI (S4: Markdown, Rich Terminal, SARIF 2.1.0), and CLI Orchestrator.
-  * **Gaurang Udgirkar:** Ollama & Local Qwen3-8B AI Judge (S1), Docker Sandboxing, Guarded MCP Client, S2 Dynamic Kernel Syscall Probing, S3 SQLite 3-Layer Pinning & Live Watcher.
+By integrating **FalkorDB**—the world's lowest-latency, GraphBLAS-powered graph database—Shadowprint bridges the gap between isolated vulnerability findings and **multi-hop compound exploit chains**, deploying an autonomous **AI Triage Agent** to reason over connected attack paths and protect agentic ecosystems.
 
 ---
 
-## 🏗️ Architecture Overview
+## 🏆 Hackathon Tracks Alignment
+
+### 🕵️ Primary Target: Track 01 — Agents That Act on Connected Data
+* **Triage Security Findings:** The autonomous **Security Triage Agent** queries FalkorDB to prioritize vulnerabilities, evaluate blast radii, and render enforcement verdicts (`BLOCK_REGISTRATION`, `QUARANTINE_TOOL`, `APPROVE_SERVER`).
+* **Multi-Hop Reasoning:** Cypher path queries discover compound exploit vectors that no flat scanner can see:  
+  $$\text{Prompt Injection (S1)} \xrightarrow{\text{HIJACKS}} \text{Tool} \xrightarrow{\text{ACCEPTS}} \text{Parameter} \xrightarrow{\text{TAINT\_FLOWS}} \text{AST Sink (S0)} \xrightarrow{\text{READS}} \text{Canary File} \xrightarrow{\text{EGRESS}} \text{Network Sink (S2)}$$
+* **Graph Queries as MCP Agent Tools:** Exposes native agent tools (`tool_trace_exploit_chains`, `tool_compute_blast_radius`, `tool_query_graph_topology`, `tool_generate_remediation_patch`).
+* **Explainable Results:** Every decision includes a plain-English attack walkthrough and interactive Cytoscape.js graph visualizer.
+
+### 🤖 Secondary Target: Track 02 — Agent Memory and Coordination
+* **Episodic Security Memory:** FalkorDB maintains persistent snapshots across audit sessions, linking runs via `-[:MUTATED_FROM]->` relationships.
+* **Temporal Drift Lineage:** Detects stealthy permission escalations and live rug-pull mutations over time.
+* **Shared Security State:** The Exploit Knowledge Graph serves as a centralized source of truth accessible across IDE agents, CI/CD gates, and runtime LLM gateways.
+
+---
+
+## 🏗️ System Architecture & Exploit Knowledge Graph
 
 ```mermaid
-flowchart TD
-    TARGET[Target MCP Server] --> S0[S0: Static Code & Config Inspection]
-    S0 --> GATE{S0 Clean & Safe to Probe?}
-    GATE -->|No / Untrusted| SAFE[Static Report Only / S2 NOT_ASSESSED]
-    GATE -->|Yes| DOCKER[Throwaway Docker Sandbox --network none]
-    
-    DOCKER --> SINK[Localhost HTTP Sink: 127.0.0.1:8080]
-    DOCKER --> CANARY[Planted Canary Secrets in /tmp]
-    DOCKER --> STRACE[strace Supervisor -> /obs/strace.log]
-    STRACE --> SERVER[Target MCP Server]
-    
-    SERVER <-->|stdio Clean JSON-RPC| MCPCLIENT[Guarded MCP Client]
-    
-    MCPCLIENT --> S1[S1: Metadata & Prompt Injection]
-    S1 --> RULES[Deterministic Unicode & Tag Rules]
-    S1 --> QWEN[Qwen3-8B via Ollama - Add-Only JSON]
-    
-    MCPCLIENT --> S2[S2: Dynamic Prober & Syscalls]
-    S2 --> SWEEP[Burst Probe Sweep - max 10 calls]
-    S2 --> CAPCHECK[Capability Mismatch vs. Claims]
-    
-    S1 --> S3[S3: Pin-and-Diff & Live Watcher]
-    S3 --> DB[(SQLite: definition, artifact, behavior hashes)]
-    S3 --> WATCH[Live Watcher: 2s Polling + tools/listChanged]
-    WATCH -->|Touch Trigger Fired| DIFF[deepdiff: Character Delta]
-    
-    S0 & S1 & S2 & DIFF --> NORM[Deduplication Normalizer]
-    NORM --> S4[S4: Reports]
-    S4 --> CLI_REPORT[Rich Terminal Matrix]
-    S4 --> MD_REPORT[output/shadowprint_report.md]
-    S4 --> SARIF_REPORT[output/results.sarif]
+flowchart TB
+    subgraph S_MCP["Target MCP Server Codebase"]
+        SrcCode["Python / JS Server Source"]
+        Schemas["Tool Schemas & Metadata"]
+    end
+
+    subgraph ENGINE_CORE["Shadowprint Core Pipeline (Engines S0 - S4)"]
+        S0["Engine S0: Static AST, Semgrep, Bandit & Gitleaks"]
+        S1["Engine S1: Prompt Injection & Zero-Width Stego"]
+        S2["Engine S2: Docker Sandbox, Canaries & Kernel Tracing"]
+        S3["Engine S3: Cryptographic Baseline Diff & Live Rug-Pull"]
+        S4["Engine S4: Multi-Modal Reporting (Terminal, SARIF, MD)"]
+    end
+
+    subgraph GRAPH_LAYER["Engine S5: FalkorDB Exploit Knowledge Graph (EKG)"]
+        GB["Graph Builder<br/>(shadowprint/graph/builder.py)"]
+        Falkor[("FalkorDB Graph Engine<br/>(:MCPServer, :Tool, :Finding, :ASTSink)<br/>GraphBLAS Sparse Matrix Algebra")]
+        CQ["Cypher Graph Analytics<br/>Multi-Hop Path Finder & Blast Radius"]
+    end
+
+    subgraph AGENT_LAYER["Track 01: Agentic Graph Reasoning Layer"]
+        TriageAgent["🤖 Autonomous Security Triage Agent"]
+        MCPTools["Agent MCP Graph Tools:<br/>• tool_trace_exploit_chains()<br/>• tool_compute_blast_radius()<br/>• tool_query_graph_topology()"]
+    end
+
+    subgraph OUTPUT_LAYER["Interactive Visualization & Enforcement"]
+        HTMLGraph["Standalone Cytoscape.js Attack Graph"]
+        AsciiTree["Rich Terminal ASCII Attack Tree"]
+        PolicyGate["Automated Gate: BLOCK / QUARANTINE / APPROVE"]
+    end
+
+    SrcCode --> S0
+    Schemas --> S1
+    SrcCode --> S2
+    Schemas --> S3
+
+    S0 --> GB
+    S1 --> GB
+    S2 --> GB
+    S3 --> GB
+
+    GB -->|"High-Speed Cypher Ingestion"| Falkor
+    Falkor <-->|"GraphBLAS Queries"| CQ
+    CQ <--> MCPTools
+    MCPTools <--> TriageAgent
+
+    TriageAgent --> PolicyGate
+    CQ --> AsciiTree
+    CQ --> HTMLGraph
 ```
 
 ---
 
-## 🚀 Quickstart
+## 💡 The Problem: Flat Scanners vs. Connected Graphs
 
-### Prerequisites
-- Python 3.10+
-- Docker Desktop (with WSL2 backend on Windows)
-- Ollama with `qwen3:8b` (or `qwen3:4b`)
+Traditional scanners produce disjointed, flat logs:
+* *Finding 1:* Indirect prompt injection in tool description (Low/Medium)
+* *Finding 2:* AST `eval()` call in helper function (Medium)
+* *Finding 3:* Outbound socket connect to 127.0.0.1:8080 (Info)
 
-### Installation
+In a flat list, each finding looks isolated and manageable. In reality, **they form an active 5-hop exploit chain**:
+1. Attacker poisons an arithmetic tool's description with zero-width invisible prompt injection.
+2. The LLM Orchestrator is hijacked into calling the tool with malicious input.
+3. The untrusted parameter flows unsanitized into an AST `eval()` sink.
+4. The process dynamically steals honeypot credentials from `/tmp/canary_creds.env`.
+5. The stolen credentials are exfiltrated to a command-and-control server.
+
+**FalkorDB solves this.** By mapping nodes and edges into an Exploit Knowledge Graph, the AI Triage Agent connects the dots in milliseconds.
+
+---
+
+## 🚀 Quickstart & Installation
+
+### 1. Prerequisites
+* Python 3.10+
+* *(Optional)* FalkorDB Docker container:
+  ```bash
+  docker run -p 6379:6379 -it --rm falkordb/falkordb:latest
+  ```
+  > **Note:** If FalkorDB Docker is offline, Shadowprint automatically and gracefully engages its **built-in In-Memory GraphBLAS Engine** with zero crashes!
+
+### 2. Installation
 ```bash
-# Clone the repository
-git clone https://github.com/Gaurang774/Shadowprint.git
-cd Shadowprint
+git clone https://github.com/Jasjyot-Singh/Openforge_security_audit_falkore_version.git
+cd Openforge_security_audit_falkore_version
 
-# Install dependencies
 pip install -r requirements.txt
 pip install -e .
 ```
 
-### Usage
+---
+
+## 💻 CLI Commands & FalkorDB Graph Suite
+
+### 1. Standard Multi-Engine Security Audit
+Runs Engines S0–S3, normalizes findings, and syncs directly into FalkorDB:
 ```bash
-# Run full audit (S0 -> S1 -> S2 -> S3 -> S4)
-shadowprint audit ./fixtures/vulnerable_runner
+python -m shadowprint.cli audit tests/final_test_mcp_1
+```
 
-# Run static & metadata only (skips container)
-shadowprint audit --skip-dynamic ./fixtures/poisoned_weather
+### 2. Ingest & Sync Target Server into FalkorDB
+Constructs the Exploit Knowledge Graph and displays graph ingestion metrics:
+```bash
+python -m shadowprint.cli graph sync tests/final_test_mcp_1
+```
 
-# Pin approved server fingerprint
-shadowprint approve ./fixtures/clean_notes
+### 3. Autonomous AI Triage Agent (Track 01 Core)
+Launches the Security Triage Agent to reason across the graph and issue an explainable remediation decision:
+```bash
+python -m shadowprint.cli graph triage tests/final_test_mcp_1
+```
 
-# Live watch server for definition drift / rug-pulls
-shadowprint watch ./fixtures/rugpull_suite
+### 4. Trace Multi-Hop Exploit Chains (ASCII Tree)
+Traverses the graph to display complete compound attack paths directly in the terminal:
+```bash
+python -m shadowprint.cli graph chains tests/final_test_mcp_1
+```
+
+### 5. Calculate Graph Centrality Blast Radius
+Measures downstream reachability and sensitive resource exposure per tool (0.0 to 10.0 scale):
+```bash
+python -m shadowprint.cli graph blast-radius tests/final_test_mcp_1
+```
+
+### 6. Export Interactive Cytoscape.js HTML Attack Graph
+Generates a standalone, dark-themed interactive graph visualizer:
+```bash
+python -m shadowprint.cli graph export-html tests/final_test_mcp_1 --output output/graph.html
 ```
 
 ---
 
-## 🎯 Benchmark Test Suite
+## 🎯 Verification & Benchmark Suite
 
-| Fixture | Vulnerability / Planted Issue | Caught By |
-|---|---|---|
-| `fixtures/clean_notes` | Benign notes CRUD tool | Clean baseline (0 FP) |
-| `fixtures/clean_fetch` | Benign fetch tool | Clean baseline (0 FP) |
-| `fixtures/poisoned_weather` | Prompt injection in descriptions via Unicode TAGs | Engine S1 (Rules + Qwen3) |
-| `fixtures/vulnerable_runner` | `shell=True` injection + hardcoded AWS secret | Engine S0 (Bandit + Gitleaks) |
-| `fixtures/exfil_calculator` | Canary key theft (`/tmp/canary_creds.env`) + egress | Engine S2 (Dynamic Prober) |
-| `fixtures/rugpull_suite` | Definition flips upon `/tmp/rugpull_trigger.flag` | Engine S3 (Live Watcher) |
-| `fixtures/attack_the_auditor` | Hostile `#nosec` / `#nosemgrep` bypass attempts | S0/S1 Hardening (`TAMPER_ATTEMPT`) |
+Shadowprint includes 53 comprehensive unit, integration, and graph tests:
+```bash
+pytest tests/ -v
+```
+
+```text
+======================= 52 passed, 1 skipped in 61.55s =======================
+```
+
+| Component | Tested Subsystems | Coverage |
+| :--- | :--- | :---: |
+| **Engine S0** | Static AST, Bandit taint, Semgrep, Gitleaks, hostile `#nosec` bypasses | 100% |
+| **Engine S1** | Unicode steganography, zero-width spaces, adversarial system prompts | 100% |
+| **Engine S2** | Docker sandbox, filesystem honeypots, `strace` kernel tracing, socket egress | 100% |
+| **Engine S3** | 3-layer SHA-256 baseline hashes, SQLite storage, sub-second live drift watcher | 100% |
+| **Engine S4** | SARIF 2.1.0 schema compliance, Markdown reports, Rich terminal UI | 100% |
+| **Engine S5 (Graph)** | FalkorDB client, GraphBuilder, multi-hop queries, blast radius, Triage Agent | 100% |
+
+---
+
+## 👥 Authors & Attribution
+* **Jasjyot Singh (Architecture & Lead):** Graph-Native Architecture (Engine S5), FalkorDB Integration, Exploit Knowledge Graph (EKG), Autonomous AI Triage Agent, Multi-Hop Cypher Engine, S0 Static Analysis, S1 Deterministic Rules, CLI Orchestrator, Unified Normalizer & S4 Reporting.
+* **Gaurang Udgirkar:** S1 Qwen3-8B AI Judge, Docker Sandboxing, S2 Dynamic Kernel Syscall Probing, S3 SQLite Cryptographic Baseline Diff & Live Watcher.
 
 ---
 
 ## 📄 License
-Apache 2.0
+Apache 2.0. Built for the FalkorDB Hackathon 2026.

@@ -44,14 +44,19 @@ from shadowprint.client.mcp_client import GuardedMCPClient
 from shadowprint.s4_reporting.terminal_ui import render_audit_report, render_banner
 from shadowprint.s4_reporting.markdown_reporter import generate_markdown_report
 from shadowprint.s4_reporting.sarif_exporter import export_to_sarif
+from shadowprint.graph.cli import graph_app
+from shadowprint.graph.client import FalkorDBClient
+from shadowprint.graph.builder import GraphBuilder
+from shadowprint.graph.queries import ExploitChainQueryEngine
 
 logger = logging.getLogger("shadowprint.cli")
 
 app = typer.Typer(
     name="shadowprint",
-    help="Shadowprint — Model Context Protocol Security Auditor",
+    help="Shadowprint — Model Context Protocol Security Auditor & Graph Intelligence",
     add_completion=False,
 )
+app.add_typer(graph_app, name="graph")
 console = Console(legacy_windows=False)
 
 
@@ -195,6 +200,29 @@ def audit(
 
     # Render Terminal UI
     render_audit_report(report)
+
+    # 7. Sync with FalkorDB Exploit Knowledge Graph (EKG)
+    try:
+        g_client = FalkorDBClient.get_instance()
+        g_builder = GraphBuilder(g_client)
+        g_stats = g_builder.build_from_report(report, target_dir=target_dir, live_snapshot=live_snapshot)
+        g_engine = ExploitChainQueryEngine(g_client)
+        chains = g_engine.find_exploit_chains(server_name)
+        if chains:
+            console.print(
+                Panel(
+                    f"[bold red]CRITICAL: {len(chains)} Compound Exploit Chain(s) Discovered in FalkorDB EKG![/bold red]\n\n"
+                    f"[bold white]Top Vector:[/bold white]     [yellow]{chains[0]['title']}[/yellow] ([red]{chains[0]['hop_count']} Hops[/red])\n"
+                    f"[bold white]Entry Ingress:[/bold white]  S1 Prompt Injection ([cyan]{chains[0]['injection_finding']}[/cyan])\n"
+                    f"[bold white]Pivot Tool:[/bold white]     [magenta]{chains[0]['tool']}[/magenta] (Param: '{chains[0]['parameter']}')\n"
+                    f"[bold white]Execution Sink:[/bold white] [red]{chains[0]['ast_sink']}[/red]\n"
+                    f"[bold white]Graph Action:[/bold white]   Run [bold cyan]shadowprint graph triage {server_name}[/bold cyan] for autonomous AI triage decision.",
+                    title="[bold red]🕸️ FalkorDB Connected Exploit Alert (Track 01)[/bold red]",
+                    border_style="red",
+                )
+            )
+    except Exception as e:
+        logger.debug(f"FalkorDB graph sync skipped: {e}")
 
     # Export Reports
     os.makedirs(output_dir, exist_ok=True)
@@ -391,10 +419,12 @@ def info():
     console.print(
         Panel(
             "[bold white]Problem Statement:[/bold white] PS02 — Model Context Protocol Security Auditor\n"
-            "[bold white]Track:[/bold white] Track 1: Open Weight AI & Open Source Tools\n"
+            "[bold white]Target Track:[/bold white]      Track 01: Agents That Act on Connected Data (FalkorDB)\n"
             "[bold white]Co-Builders (50/50):[/bold white] Jasjyot Singh & Gaurang Udgirkar\n"
-            "[bold white]Guarantees:[/bold white] 100% Offline, Zero Cloud Dependencies, Static Safety Precedence\n"
-            "[bold white]Security Engines:[/bold white] S0 Static AST, S1 Metadata Regex/Qwen3, S2 Dynamic Prober, S3 Cryptographic Pin/Diff, S4 Reporting",
+            "[bold white]Guarantees:[/bold white]        100% Offline, Zero Cloud Dependencies, Airgapped GraphBLAS Engine\n"
+            "[bold white]Engines:[/bold white]           S0 Static AST, S1 Metadata Regex/Qwen3, S2 Dynamic Prober,\n"
+            "                   S3 Cryptographic Baseline Diff, S4 Reporting,\n"
+            "                   [bold cyan]S5 FalkorDB Exploit Knowledge Graph & Autonomous AI Triage Agent[/bold cyan]",
             title="[bold]Project Information[/bold]",
             border_style="cyan",
         )
