@@ -1,69 +1,79 @@
 """
 Graph Visualizer for FalkorDB Exploit Knowledge Graphs.
-Provides Rich ASCII terminal graph rendering and standalone interactive Cytoscape.js HTML exports.
+Provides Rich ASCII terminal graph rendering with markup escaping,
+and standalone interactive Cytoscape.js HTML exports with locally bundled assets and XSS protection.
 """
 
+import os
 import json
+import html
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from rich.console import Console
 from rich.panel import Panel
 from rich.tree import Tree
+from rich.markup import escape as rich_escape
 
 from shadowprint.graph.client import FalkorDBClient
 from shadowprint.graph.schema import NodeLabel
 
 console = Console(legacy_windows=False)
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+CYTOSCAPE_JS_PATH = ASSETS_DIR / "cytoscape.min.js"
 
 
 class GraphVisualizer:
     """
-    Renders Exploit Knowledge Graphs to terminal and interactive HTML.
+    Renders Exploit Knowledge Graphs to terminal and interactive HTML with strict injection safety.
     """
     def __init__(self, client: Optional[FalkorDBClient] = None):
         self.client = client or FalkorDBClient.get_instance()
 
     def render_ascii_graph(self, chains: List[Dict[str, Any]], server_name: str):
-        """Renders an intuitive ASCII attack tree in the terminal using Rich."""
+        """Renders an intuitive ASCII attack tree in the terminal using Rich with escaped markup."""
+        safe_server = rich_escape(server_name)
         if not chains:
-            console.print(f"[dim]No compound exploit chains to visualize for '{server_name}'.[/dim]")
+            console.print(f"[dim]No compound exploit chains to visualize for '{safe_server}'.[/dim]")
             return
 
         tree = Tree(
-            f"[bold red]CRITICAL: Multi-Hop Exploit Graph for '{server_name}'[/bold red]",
+            f"[bold red]CRITICAL: Multi-Hop Exploit Graph for '{safe_server}'[/bold red]",
             guide_style="bold red",
         )
 
         for i, ch in enumerate(chains, 1):
-            chain_branch = tree.add(f"[bold yellow]Exploit Chain #{i}: {ch['title']}[/bold yellow] ([red]{ch['hop_count']} Hops[/red])")
+            ch_title = rich_escape(str(ch.get("title", "")))
+            ch_inj = rich_escape(str(ch.get("injection_finding", "")))
+            ch_tool = rich_escape(str(ch.get("tool", "")))
+            ch_param = rich_escape(str(ch.get("parameter", "")))
+            ch_sink = rich_escape(str(ch.get("ast_sink", "")))
+            ch_canary = rich_escape(str(ch.get("canary_read", "")))
+            ch_exfil = rich_escape(str(ch.get("network_exfil", "")))
+
+            chain_branch = tree.add(
+                f"[bold yellow]Exploit Chain #{i}: {ch_title}[/bold yellow] ([red]{ch.get('hop_count', 4)} Hops[/red])"
+            )
             
-            # Step 1: Ingress
-            s1_node = chain_branch.add(f"[bold cyan]Hop 1 (Ingress):[/bold cyan] S1 Prompt Injection [{ch['injection_finding']}]")
+            s1_node = chain_branch.add(f"[bold cyan]Hop 1 (Ingress):[/bold cyan] S1 Prompt Injection [{ch_inj}]")
+            tool_node = s1_node.add(f"[bold magenta]Hop 2 (Control Hijack):[/bold magenta] Tool '{ch_tool}' (Param: '{ch_param}')")
+            sink_node = tool_node.add(f"[bold red]Hop 3 (AST Execution Sink):[/bold red] {ch_sink}")
             
-            # Step 2: Hijacked Tool
-            tool_node = s1_node.add(f"[bold magenta]Hop 2 (Control Hijack):[/bold magenta] Tool '{ch['tool']}' (Param: '{ch['parameter']}')")
-            
-            # Step 3: AST Execution Sink
-            sink_node = tool_node.add(f"[bold red]Hop 3 (AST Execution Sink):[/bold red] {ch['ast_sink']}")
-            
-            # Step 4: Canary Read
             if ch.get("canary_read"):
-                sink_node.add(f"[bold yellow]Hop 4 (Privilege Escalation):[/bold yellow] Honeypot Read &rarr; '{ch['canary_read']}'")
+                sink_node.add(f"[bold yellow]Hop 4 (Privilege Escalation):[/bold yellow] Honeypot Read &rarr; '{ch_canary}'")
             
-            # Step 5: Network Exfiltration
             if ch.get("network_exfil"):
-                sink_node.add(f"[bold red]Hop 5 (Egress Exfiltration):[/bold red] Outbound Socket &rarr; '{ch['network_exfil']}'")
+                sink_node.add(f"[bold red]Hop 5 (Egress Exfiltration):[/bold red] Outbound Socket &rarr; '{ch_exfil}'")
 
         console.print(Panel(tree, title="[bold red]FalkorDB Exploit Knowledge Graph (EKG)[/bold red]", border_style="red"))
 
     def generate_cytoscape_html(self, server_name: str, output_path: str) -> str:
         """
         Generates a standalone, beautiful Cytoscape.js interactive HTML attack graph.
+        Uses locally bundled cytoscape.min.js and safe JSON element embedding (XSS-safe).
         """
         g = self.client.in_memory_graph
         elements = []
 
-        # Color and shape mapping per node label
         style_map = {
             NodeLabel.MCP_SERVER.value: {"color": "#38bdf8", "shape": "round-rectangle", "size": 65},
             NodeLabel.TOOL.value: {"color": "#facc15", "shape": "ellipse", "size": 55},
@@ -79,12 +89,17 @@ class GraphVisualizer:
         for n_id, n_data in g.nodes.items():
             primary_label = n_data["labels"][0] if n_data["labels"] else "Node"
             styling = style_map.get(primary_label, {"color": "#64748b", "shape": "ellipse", "size": 45})
-            label_text = n_data["properties"].get("name") or n_data["properties"].get("finding_id") or n_data["properties"].get("sink_type") or n_id.split(":")[-1]
+            raw_text = (
+                n_data["properties"].get("name")
+                or n_data["properties"].get("finding_id")
+                or n_data["properties"].get("sink_type")
+                or n_id.split(":")[-1]
+            )
 
             elements.append({
                 "data": {
                     "id": n_id,
-                    "label": f"{primary_label}\n{label_text}",
+                    "label": f"{primary_label}\n{raw_text}",
                     "node_type": primary_label,
                     "details": json.dumps(n_data["properties"], indent=2),
                     "color": styling["color"],
@@ -104,12 +119,23 @@ class GraphVisualizer:
                 }
             })
 
+        # Local script bundling or fallback
+        js_inclusion = ""
+        if CYTOSCAPE_JS_PATH.is_file():
+            js_code = CYTOSCAPE_JS_PATH.read_text(encoding="utf-8")
+            js_inclusion = f"<script>{js_code}</script>"
+        else:
+            js_inclusion = '<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>'
+
+        safe_server_name = html.escape(server_name)
+        json_elements_str = json.dumps(elements, indent=2)
+
         html_template = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Shadowprint Exploit Knowledge Graph — {server_name}</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+    <title>Shadowprint Exploit Knowledge Graph — {safe_server_name}</title>
+    {js_inclusion}
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
         body {{
@@ -169,7 +195,7 @@ class GraphVisualizer:
 <body>
     <div id="sidebar">
         <h1>🕸️ Exploit Knowledge Graph</h1>
-        <div class="badge">Target: {server_name}</div>
+        <div class="badge">Target: {safe_server_name}</div>
         <p style="font-size: 0.875rem; color: #94a3b8; line-height: 1.5;">
             FalkorDB GraphBLAS multi-hop topology. Click any node to inspect detailed taint properties, AST locations, and vulnerability evidence.
         </p>
@@ -190,10 +216,15 @@ class GraphVisualizer:
     </div>
     <div id="cy"></div>
 
+    <script type="application/json" id="cy-data">
+{json_elements_str}
+    </script>
+
     <script>
+        const elementsData = JSON.parse(document.getElementById('cy-data').textContent);
         const cy = cytoscape({{
             container: document.getElementById('cy'),
-            elements: {json.dumps(elements, indent=2)},
+            elements: elementsData,
             style: [
                 {{
                     selector: 'node',

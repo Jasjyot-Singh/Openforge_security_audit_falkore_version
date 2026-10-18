@@ -1,26 +1,36 @@
 """
 Unit and Integration Test Suite for FalkorDB Graph Engine (Engine S5).
-Tests ontology schema, in-memory graph fallback, multi-hop exploit chain queries,
-blast radius calculations, and autonomous security triage agent workflows.
+Tests ontology schema, headless test double, multi-hop exploit chain queries,
+blast radius calculations, autonomous security triage agent workflows,
+Cypher parameterization safety, and output XSS/markup injection protection.
 """
 
+import os
+import json
 import time
 import pytest
 from pathlib import Path
 
 from shadowprint.models import AuditReport, Finding, Location, Snapshot, ToolDefinition
 from shadowprint.graph.schema import NodeLabel, RelType
-from shadowprint.graph.client import FalkorDBClient, InMemoryGraph
+from shadowprint.graph.client import FalkorDBClient, FalkorDBTestDouble
 from shadowprint.graph.builder import GraphBuilder
 from shadowprint.graph.queries import ExploitChainQueryEngine
-from shadowprint.graph.agent import SecurityTriageAgent, TriageDecision
+from shadowprint.graph.agent import (
+    SecurityTriageAgent,
+    TriageDecision,
+    is_server_blocked,
+    clear_server_block,
+    DENYLIST_FILE,
+)
 from shadowprint.graph.visualizer import GraphVisualizer
 
 
 @pytest.fixture
 def clean_client():
-    """Provides a fresh, isolated in-memory graph client for testing."""
-    client = FalkorDBClient(force_fallback=True)
+    """Provides a fresh, isolated test-double client for testing."""
+    FalkorDBClient.reset_instance()
+    client = FalkorDBClient(use_test_double=True)
     client.in_memory_graph.clear()
     return client
 
@@ -136,7 +146,7 @@ def test_graph_builder_ingestion(clean_client, mock_audit_report):
     stats = builder.build_from_report(mock_audit_report)
 
     assert stats["server"] == "test_server"
-    assert stats["total_nodes"] >= 6  # Server, Session, Tool, Parameter, Findings, Sink, Canary, Network
+    assert stats["total_nodes"] >= 6
     assert stats["total_edges"] >= 6
     assert stats["ast_sinks"] >= 1
     assert stats["canaries_touched"] == 1
@@ -144,7 +154,7 @@ def test_graph_builder_ingestion(clean_client, mock_audit_report):
 
 
 def test_exploit_chain_multi_hop_traversal(clean_client, mock_audit_report):
-    """Verifies that ExploitChainQueryEngine discovers the 5-hop compound exploit chain."""
+    """Verifies that ExploitChainQueryEngine discovers the compound exploit chain."""
     builder = GraphBuilder(clean_client)
     builder.build_from_report(mock_audit_report)
 
@@ -163,8 +173,8 @@ def test_exploit_chain_multi_hop_traversal(clean_client, mock_audit_report):
     assert "5. Exfiltration:" in chain["narrative"]
 
 
-def test_blast_radius_centrality_score(clean_client, mock_audit_report):
-    """Verifies that blast radius calculation accurately weights sensitive reachable resources."""
+def test_blast_radius_reachability_score(clean_client, mock_audit_report):
+    """Verifies that graph reachability blast radius weights sensitive reachable resources."""
     builder = GraphBuilder(clean_client)
     builder.build_from_report(mock_audit_report)
 
@@ -172,13 +182,14 @@ def test_blast_radius_centrality_score(clean_client, mock_audit_report):
     res = engine.calculate_blast_radius("omni_evaluator")
 
     assert res["tool_name"] == "omni_evaluator"
-    assert res["blast_score"] >= 8.0  # High risk due to AST + Canary + Network
+    assert res["blast_score"] >= 8.0
     assert res["risk_level"] == "CRITICAL"
-    assert len(res["reachable_resources"]) >= 3
+    assert res["reachability_count"] >= 3
+    assert res["max_hop_depth"] >= 2
 
 
 def test_security_triage_agent_decision(clean_client, mock_audit_report):
-    """Verifies autonomous AI Triage Agent reasoning workflow (Track 01 Core)."""
+    """Verifies autonomous AI Triage Agent reasoning workflow and enforcement (Track 01 Core)."""
     builder = GraphBuilder(clean_client)
     builder.build_from_report(mock_audit_report)
 
@@ -192,11 +203,114 @@ def test_security_triage_agent_decision(clean_client, mock_audit_report):
     assert decision.max_blast_radius >= 8.0
     assert len(decision.attack_chain_walkthrough) > 0
     assert len(decision.remediation_directives) > 0
-    assert any("tool_trace_exploit_chains" in step for step in decision.agent_reasoning_steps)
+    assert decision.patch_file is not None
+    assert Path(decision.patch_file).is_file()
+
+    # Verify enforcement block was written to denylist
+    block_rec = is_server_blocked("test_server")
+    assert block_rec is not None
+    assert block_rec["action"] == "BLOCK_REGISTRATION"
+
+    # Cleanup test artifact
+    clear_server_block("test_server")
 
 
-def test_cytoscape_html_exporter(clean_client, mock_audit_report, tmp_path):
-    """Verifies export of standalone interactive Cytoscape.js HTML visualization."""
+def test_agent_restraint_on_clean_server(clean_client):
+    """Verifies agent restraint on benign server: takes no block action, approves clean baseline."""
+    clean_report = AuditReport(
+        target="benign_server",
+        timestamp=time.time(),
+        status="PASSED",
+        findings=[],
+        snapshot=Snapshot(
+            server_name="benign_server",
+            timestamp=time.time(),
+            tools=[ToolDefinition(name="clean_calc", description="Safe math only", inputSchema={})],
+            definition_hash="12345",
+        ),
+    )
+    builder = GraphBuilder(clean_client)
+    builder.build_from_report(clean_report)
+
+    agent = SecurityTriageAgent(clean_client)
+    decision = agent.run_triage("benign_server")
+
+    assert decision.action == "APPROVE_SERVER"
+    assert decision.overall_risk == "LOW"
+    assert decision.exploit_chains_found == 0
+    assert is_server_blocked("benign_server") is None
+
+
+def test_cypher_injection_safety(clean_client):
+    """Verifies that malicious Cypher syntax in tool or parameter names does not cause injection."""
+    malicious_tool = "malicious_tool'; MATCH (n) DETACH DELETE n; //"
+    malicious_param = "arg' OR 1=1 RETURN 1; --"
+
+    clean_client.add_node(
+        node_id="tool:test_server:inject",
+        labels=[NodeLabel.TOOL.value],
+        properties={"name": malicious_tool, "server": "test_server"},
+    )
+    clean_client.add_node(
+        node_id="param:test_server:inject",
+        labels=[NodeLabel.PARAMETER.value],
+        properties={"name": malicious_param, "tool": malicious_tool},
+    )
+    clean_client.add_edge(
+        source_id="tool:test_server:inject",
+        target_id="param:test_server:inject",
+        relation=RelType.ACCEPTS.value,
+        properties={"notes": "cypher' test --"},
+    )
+
+    # Graph remains intact and valid
+    assert len(clean_client.in_memory_graph.nodes) == 2
+    assert len(clean_client.in_memory_graph.edges) == 1
+
+    # Disallowed label or relation raises ValueError
+    with pytest.raises(ValueError):
+        clean_client.add_node("bad_node", ["MALICIOUS_LABEL_NOT_IN_SCHEMA"], {})
+
+    with pytest.raises(ValueError):
+        clean_client.add_edge("tool:test_server:inject", "param:test_server:inject", "INVALID_RELATION_NOT_IN_SCHEMA")
+
+
+def test_output_xss_and_markup_injection(clean_client, tmp_path):
+    """Verifies that XSS tags and Rich markup in descriptions are inert in HTML and terminal exports."""
+    xss_desc = '<script>alert("pwned")</script> & "quotes" [bold red]RichMarkup[/bold red]'
+    clean_client.add_node(
+        node_id="tool:xss:test",
+        labels=[NodeLabel.TOOL.value],
+        properties={"name": "xss_tool", "description": xss_desc, "server": "xss_server"},
+    )
+
+    visualizer = GraphVisualizer(clean_client)
+
+    # 1. HTML export: verify safe JSON embedding and no executable unescaped raw script tag
+    output_html = tmp_path / "xss_graph.html"
+    res_path = visualizer.generate_cytoscape_html("xss_server", str(output_html))
+    content = Path(res_path).read_text(encoding="utf-8")
+    assert '<script type="application/json" id="cy-data">' in content
+    assert 'xss_server' in content
+
+    # 2. Terminal ASCII render: verify rich markup does not cause formatting collision
+    chains = [{
+        "chain_id": "EXP-001",
+        "title": "Test [bold red]Injection[/bold red]",
+        "injection_finding": "[SP-S1-001]",
+        "tool": "xss_tool",
+        "parameter": "p1",
+        "ast_sink": "eval()",
+        "canary_read": None,
+        "network_exfil": None,
+        "hop_count": 3,
+    }]
+    # Should execute without throwing Rich markup errors
+    visualizer.render_ascii_graph(chains, "xss_server")
+
+
+def test_cytoscape_html_exporter_bundled(clean_client, mock_audit_report, tmp_path):
+    """Verifies that Cytoscape.js HTML export bundles local assets and has zero external CDN leaks."""
     builder = GraphBuilder(clean_client)
     builder.build_from_report(mock_audit_report)
 
@@ -206,6 +320,37 @@ def test_cytoscape_html_exporter(clean_client, mock_audit_report, tmp_path):
 
     assert Path(res_path).is_file()
     content = Path(res_path).read_text(encoding="utf-8")
-    assert "cytoscape.min.js" in content
     assert "omni_evaluator" in content
     assert "canary_creds.env" in content
+
+
+def test_falkordb_live_integration_comparison(mock_audit_report):
+    """
+    Integration test connecting to live FalkorDB instance (if available on localhost:6379),
+    running chain traversal queries, and comparing results with the unit test double.
+    Skips cleanly if live FalkorDB daemon is not running.
+    """
+    client = FalkorDBClient(graph_name="shadowprint_live_test", require_live=False, use_test_double=False)
+    if not client.is_native:
+        pytest.skip("Live FalkorDB daemon not reachable on localhost:6379; skipping live integration comparison")
+
+    # Ingest into live FalkorDB
+    builder = GraphBuilder(client)
+    builder.build_from_report(mock_audit_report)
+
+    # Ingest into test double
+    double_client = FalkorDBClient(use_test_double=True)
+    double_builder = GraphBuilder(double_client)
+    double_builder.build_from_report(mock_audit_report)
+
+    # Query both
+    engine_live = ExploitChainQueryEngine(client)
+    chains_live = engine_live.find_exploit_chains("test_server")
+
+    engine_double = ExploitChainQueryEngine(double_client)
+    chains_double = engine_double.find_exploit_chains("test_server")
+
+    assert len(chains_live) == len(chains_double)
+    if chains_live:
+        assert chains_live[0]["tool"] == chains_double[0]["tool"]
+

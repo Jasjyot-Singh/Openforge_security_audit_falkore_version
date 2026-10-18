@@ -1,5 +1,7 @@
 """
-Shadowprint S1 Metadata Engine: Prompt Guard Heuristic Pre-Filter.
+Shadowprint S1 Metadata Engine: Heuristic Regex Pre-Filter.
+Note: This module is Shadowprint's internal deterministic regex and heuristic pre-filter;
+it is NOT Meta's Prompt Guard model.
 Owner: Gaurang Udgirkar [G]
 
 Provides high-speed deterministic heuristic detection for direct prompt injection,

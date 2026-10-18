@@ -96,6 +96,7 @@ class GraphBuilder:
                 labels=[NodeLabel.TOOL.value],
                 properties={
                     "name": tool_name,
+                    "server": server_name,
                     "server_name": server_name,
                     "description": t_info.get("description", "")[:250],
                     "is_safe": False if any(f.tool == tool_name and f.severity in ("critical", "high") for f in report.findings) else True,
@@ -120,6 +121,8 @@ class GraphBuilder:
                     labels=[NodeLabel.PARAMETER.value],
                     properties={
                         "name": p_name,
+                        "server": server_name,
+                        "tool": tool_name,
                         "tool_name": tool_name,
                         "type": p_type,
                         "description": p_desc[:200],
@@ -292,7 +295,7 @@ class GraphBuilder:
                 self.client.add_edge(
                     source_id=session_node_id,
                     target_id=f_node_id,
-                    relation="DETECTED_MUTATION",
+                    relation=RelType.DETECTED_MUTATION.value,
                 )
 
         duration_ms = (time.perf_counter() - start_time) * 1000

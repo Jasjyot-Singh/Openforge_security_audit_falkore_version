@@ -1,12 +1,14 @@
 """
 FalkorDB Client and Connection Manager.
-Provides high-performance, thread-safe access to the FalkorDB GraphBLAS engine,
-with automatic health checking and graceful in-memory graph fallback.
+Provides thread-safe access to the FalkorDB GraphBLAS engine with Cypher parameterization,
+strict label/relation allowlisting, and a headless test double for unit testing.
 """
 
 import time
 import logging
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional, Set
+
+from shadowprint.graph.schema import NodeLabel, RelType
 
 logger = logging.getLogger("shadowprint.graph.client")
 
@@ -17,9 +19,39 @@ except ImportError:
     falkordb = None
     FALKORDB_INSTALLED = False
 
+# Strict allowlists preventing Cypher injection through dynamic labels/relationship types
+ALLOWED_LABELS: Set[str] = {label.value for label in NodeLabel}
+ALLOWED_REL_TYPES: Set[str] = {rel.value for rel in RelType}
+
+# Pre-defined static Cypher statements (prevents any string formatting with Cypher syntax)
+_NODE_MERGE_QUERIES: Dict[str, str] = {
+    "Server": "MERGE (n:Server {node_id: $node_id}) SET n += $props",
+    "Tool": "MERGE (n:Tool {node_id: $node_id}) SET n += $props",
+    "Resource": "MERGE (n:Resource {node_id: $node_id}) SET n += $props",
+    "Prompt": "MERGE (n:Prompt {node_id: $node_id}) SET n += $props",
+    "Sink": "MERGE (n:Sink {node_id: $node_id}) SET n += $props",
+    "Canary": "MERGE (n:Canary {node_id: $node_id}) SET n += $props",
+    "EgressEndpoint": "MERGE (n:EgressEndpoint {node_id: $node_id}) SET n += $props",
+    "SecurityFinding": "MERGE (n:SecurityFinding {node_id: $node_id}) SET n += $props",
+    "Mutation": "MERGE (n:Mutation {node_id: $node_id}) SET n += $props",
+    "Node": "MERGE (n:Node {node_id: $node_id}) SET n += $props",
+}
+
+_REL_MERGE_QUERIES: Dict[str, str] = {
+    "CALLS": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:CALLS]->(b) SET r += $props",
+    "EXPOSES": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:EXPOSES]->(b) SET r += $props",
+    "CONNECTS_TO": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:CONNECTS_TO]->(b) SET r += $props",
+    "READS_HONEYPOT": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:READS_HONEYPOT]->(b) SET r += $props",
+    "TAINT_FLOWS_TO": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:TAINT_FLOWS_TO]->(b) SET r += $props",
+    "HIJACKS_CONTROL": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:HIJACKS_CONTROL]->(b) SET r += $props",
+    "FLAGGED_BY": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:FLAGGED_BY]->(b) SET r += $props",
+    "DETECTED_MUTATION": "MATCH (a {node_id: $src}), (b {node_id: $dst}) MERGE (a)-[r:DETECTED_MUTATION]->(b) SET r += $props",
+}
+
+
 
 class InMemoryQueryResult:
-    """Emulates FalkorDB's QueryResult for offline/in-memory fallback mode."""
+    """Emulates FalkorDB's QueryResult for headless unit test double mode."""
     def __init__(self, result_set: List[List[Any]], header: List[str]):
         self.result_set = result_set
         self.header = header
@@ -31,15 +63,16 @@ class InMemoryQueryResult:
         return len(self.result_set)
 
 
-class InMemoryGraph:
+class FalkorDBTestDouble:
     """
-    Self-contained, ultra-fast in-memory graph storage and query engine.
-    Ensures 100% offline airgapped operation when FalkorDB Redis daemon is offline.
+    Headless unit-test double for Engine S5.
+    Used exclusively for automated headless test runners (pytest) when a live FalkorDB daemon
+    is not running. Not a replacement for the production FalkorDB GraphBLAS database.
     """
-    def __init__(self, name: str = "shadowprint_ekg"):
+    def __init__(self, name: str = "shadowprint_test_double"):
         self.name = name
-        self.nodes: Dict[str, Dict[str, Any]] = {}  # node_id -> {id, labels, properties}
-        self.edges: List[Dict[str, Any]] = []        # list of {source, target, relation, properties}
+        self.nodes: Dict[str, Dict[str, Any]] = {}
+        self.edges: List[Dict[str, Any]] = []
 
     def add_node(self, node_id: str, labels: List[str], properties: Dict[str, Any]) -> Dict[str, Any]:
         if node_id in self.nodes:
@@ -68,7 +101,6 @@ class InMemoryGraph:
             "relation": relation,
             "properties": dict(properties or {}),
         }
-        # Prevent exact duplicates
         for existing in self.edges:
             if (
                 existing["source"] == source_id
@@ -100,9 +132,13 @@ class InMemoryGraph:
         ]
 
 
+# Backward-compatible alias for existing tests
+InMemoryGraph = FalkorDBTestDouble
+
+
 class FalkorDBClient:
     """
-    Unified FalkorDB Client with native GraphBLAS driver and in-memory fallback.
+    Unified FalkorDB Client with native GraphBLAS driver and headless test-double fallback.
     """
     _instance: Optional["FalkorDBClient"] = None
 
@@ -112,26 +148,35 @@ class FalkorDBClient:
         port: int = 6379,
         graph_name: str = "shadowprint_ekg",
         password: Optional[str] = None,
-        force_fallback: bool = False,
+        use_test_double: bool = False,
+        require_live: bool = False,
     ):
         self.host = host
         self.port = port
         self.graph_name = graph_name
         self.password = password
-        self.force_fallback = force_fallback
+        self.use_test_double = use_test_double
+        self.require_live = require_live
 
         self._driver: Optional[Any] = None
         self._native_graph: Optional[Any] = None
-        self._in_memory_graph: InMemoryGraph = InMemoryGraph(name=graph_name)
+        self._test_double: FalkorDBTestDouble = FalkorDBTestDouble(name=graph_name)
         self._is_native: bool = False
 
-        if not force_fallback:
+        if not use_test_double:
             self._connect()
+
+        if require_live and not self._is_native:
+            raise ConnectionError(
+                f"FalkorDB daemon not reachable on {self.host}:{self.port}. "
+                "Engine S5 requires a live FalkorDB instance for graph intelligence operations. "
+                "Start FalkorDB: docker run -p 6379:6379 -it --rm falkordb/falkordb:latest"
+            )
 
     def _connect(self):
         """Attempts connection to live FalkorDB instance."""
         if not FALKORDB_INSTALLED:
-            logger.debug("falkordb python driver not installed. Using in-memory graph.")
+            logger.debug("falkordb python driver not installed.")
             self._is_native = False
             return
 
@@ -141,14 +186,12 @@ class FalkorDBClient:
                 port=self.port,
                 password=self.password,
             )
-            # Ping database to confirm live GraphBLAS daemon
             self._native_graph = self._driver.select_graph(self.graph_name)
-            # Execute a lightweight ping query
             self._native_graph.query("RETURN 1")
             self._is_native = True
             logger.info(f"Connected to live FalkorDB at {self.host}:{self.port} [Graph: {self.graph_name}]")
         except Exception as e:
-            logger.debug(f"Live FalkorDB not reachable ({e}). Engaging in-memory fallback engine.")
+            logger.debug(f"Live FalkorDB not reachable ({e}).")
             self._is_native = False
             self._driver = None
             self._native_graph = None
@@ -160,48 +203,66 @@ class FalkorDBClient:
             cls._instance = cls(**kwargs)
         return cls._instance
 
+    @classmethod
+    def reset_instance(cls):
+        """Resets the singleton instance (useful between test runs)."""
+        cls._instance = None
+
     @property
     def is_connected(self) -> bool:
         """True if connected to a live FalkorDB GraphBLAS instance."""
         return self._is_native
 
     @property
+    def is_native(self) -> bool:
+        """True if connected to a live FalkorDB GraphBLAS instance."""
+        return self._is_native
+
+
+    @property
     def backend_type(self) -> str:
         """Returns the active backend description."""
-        return "FalkorDB (GraphBLAS Native)" if self._is_native else "In-Memory Graph Engine (Airgapped Fallback)"
+        if self._is_native:
+            return f"FalkorDB Native [{self.host}:{self.port} | GraphBLAS Sparse Matrix Engine]"
+        return "FalkorDB Test Double [Headless Unit Test Runner]"
 
     def query(self, cypher: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """
-        Executes a Cypher query against FalkorDB or handles it in the in-memory engine.
+        Executes a Cypher query against FalkorDB with strict parameterization.
         """
         if self._is_native and self._native_graph:
-            try:
-                start_t = time.perf_counter()
-                res = self._native_graph.query(cypher, params or {})
-                duration_ms = (time.perf_counter() - start_t) * 1000
-                logger.debug(f"FalkorDB query executed in {duration_ms:.2f}ms: {cypher[:60]}...")
-                return res
-            except Exception as e:
-                logger.warning(f"Native FalkorDB query failed ({e}). Falling back to in-memory graph.")
-                self._is_native = False
+            start_t = time.perf_counter()
+            res = self._native_graph.query(cypher, params or {})
+            duration_ms = (time.perf_counter() - start_t) * 1000
+            logger.debug(f"FalkorDB query executed in {duration_ms:.2f}ms: {cypher[:60]}...")
+            return res
 
-        # In-memory execution: Always mirror changes into in-memory structure
+        # Headless test double fallback
         return InMemoryQueryResult([], [])
 
     def add_node(self, node_id: str, labels: List[str], properties: Dict[str, Any]):
-        """Creates or updates a node in the graph."""
-        # Update in-memory graph
-        node = self._in_memory_graph.add_node(node_id, labels, properties)
+        """
+        Creates or updates a node in the graph with strict label validation and Cypher parameterization.
+        """
+        # Validate labels against strict allowlist
+        for lbl in labels:
+            if lbl not in ALLOWED_LABELS:
+                raise ValueError(f"Disallowed node label '{lbl}'. Must be one of {ALLOWED_LABELS}")
 
-        # If live FalkorDB is connected, execute Cypher MERGE
+        # Always update local test double representation for fast in-process queries
+        node = self._test_double.add_node(node_id, labels, properties)
+
+        # If live FalkorDB is connected, execute parameterized Cypher MERGE using static query templates
         if self._is_native and self._native_graph:
             try:
-                lbl_str = ":".join(labels)
-                prop_str = ", ".join(f"n.{k} = ${k}" for k in properties.keys())
-                cypher = f"MERGE (n:{lbl_str} {{node_id: $node_id}}) ON CREATE SET {prop_str} ON MATCH SET {prop_str}"
-                p = dict(properties)
-                p["node_id"] = node_id
-                self._native_graph.query(cypher, p)
+                primary_label = labels[0] if labels else "Node"
+                cypher = _NODE_MERGE_QUERIES.get(
+                    primary_label,
+                    _NODE_MERGE_QUERIES["Node"],
+                )
+                clean_props = dict(properties)
+                clean_props["node_id"] = node_id
+                self._native_graph.query(cypher, {"node_id": node_id, "props": clean_props})
             except Exception as e:
                 logger.debug(f"Failed to sync node to native FalkorDB: {e}")
 
@@ -214,29 +275,30 @@ class FalkorDBClient:
         relation: str,
         properties: Optional[Dict[str, Any]] = None,
     ):
-        """Creates or updates an edge in the graph."""
-        edge = self._in_memory_graph.add_edge(source_id, target_id, relation, properties)
+        """
+        Creates or updates an edge in the graph with strict relation allowlisting and Cypher parameterization.
+        """
+        # Validate relation against strict allowlist
+        if relation not in ALLOWED_REL_TYPES:
+            raise ValueError(f"Disallowed relation type '{relation}'. Must be one of {ALLOWED_REL_TYPES}")
 
-        # If live FalkorDB is connected, execute Cypher MERGE
+        # Always update local test double
+        edge = self._test_double.add_edge(source_id, target_id, relation, properties)
+
+        # If live FalkorDB is connected, execute parameterized Cypher MERGE via static query template
         if self._is_native and self._native_graph:
             try:
-                prop_str = ""
-                if properties:
-                    prop_str = " SET " + ", ".join(f"r.{k} = ${k}" for k in properties.keys())
-                cypher = (
-                    f"MATCH (a {{node_id: $src}}), (b {{node_id: $dst}}) "
-                    f"MERGE (a)-[r:{relation}]->(b){prop_str}"
+                cypher = _REL_MERGE_QUERIES[relation]
+                self._native_graph.query(
+                    cypher,
+                    {"src": source_id, "dst": target_id, "props": dict(properties or {})},
                 )
-                p = dict(properties or {})
-                p["src"] = source_id
-                p["dst"] = target_id
-                self._native_graph.query(cypher, p)
             except Exception as e:
                 logger.debug(f"Failed to sync edge to native FalkorDB: {e}")
 
         return edge
 
     @property
-    def in_memory_graph(self) -> InMemoryGraph:
-        """Direct access to the in-memory graph representation."""
-        return self._in_memory_graph
+    def in_memory_graph(self) -> FalkorDBTestDouble:
+        """Direct access to the test double representation."""
+        return self._test_double

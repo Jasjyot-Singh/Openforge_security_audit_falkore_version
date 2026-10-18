@@ -262,6 +262,23 @@ def approve(
     target_dir = target_path if target_path.is_dir() else target_path.parent
     entrypoint = find_entrypoint(target_path)
 
+    # Enforcement check: Verify server is not blocked by Security Triage Agent
+    from shadowprint.graph.agent import is_server_blocked
+    block_info = is_server_blocked(server_name)
+    if block_info:
+        console.print(
+            Panel(
+                f"[bold red]Approval Denied: Server '{server_name}' is currently BLOCKED by Security Triage Agent![/bold red]\n\n"
+                f"[bold white]Reason:[/bold white]           {block_info.get('reason')}\n"
+                f"[bold white]Blast Radius:[/bold white]     {block_info.get('blast_radius')} / 10.0\n"
+                f"[bold white]Remediation Patch:[/bold white] [cyan]{block_info.get('patch_file')}[/cyan]\n\n"
+                "[yellow]Action Required:[/yellow] Resolve findings and re-triage to unblock before creating baseline approval.",
+                title="[bold red]Enforcement Policy Blocked Approval[/bold red]",
+                border_style="red",
+            )
+        )
+        raise typer.Exit(code=1)
+
     if not entrypoint:
         console.print(f"[bold red]Error:[/bold red] No valid Python entrypoint found in '{target}'.")
         raise typer.Exit(code=1)
@@ -340,7 +357,7 @@ def list_pins():
 @app.command(name="watch")
 def watch(
     target: str = typer.Argument(..., help="Path to MCP server directory or script to monitor"),
-    interval: float = typer.Option(2.0, "--interval", "-i", help="Polling interval in seconds"),
+    interval: float = typer.Option(0.5, "--interval", "-i", help="Sub-second polling interval in seconds (default: 0.5s)"),
     max_cycles: Optional[int] = typer.Option(None, "--max-cycles", "-n", help="Max check cycles (default: continuous)"),
 ):
     """
@@ -420,11 +437,11 @@ def info():
         Panel(
             "[bold white]Problem Statement:[/bold white] PS02 — Model Context Protocol Security Auditor\n"
             "[bold white]Target Track:[/bold white]      Track 01: Agents That Act on Connected Data (FalkorDB)\n"
+            "[bold white]Secondary Track:[/bold white]   Track 02: Agent Memory & Coordination (Drift Lineage)\n"
             "[bold white]Co-Builders (50/50):[/bold white] Jasjyot Singh & Gaurang Udgirkar\n"
-            "[bold white]Guarantees:[/bold white]        100% Offline, Zero Cloud Dependencies, Airgapped GraphBLAS Engine\n"
-            "[bold white]Engines:[/bold white]           S0 Static AST, S1 Metadata Regex/Qwen3, S2 Dynamic Prober,\n"
-            "                   S3 Cryptographic Baseline Diff, S4 Reporting,\n"
-            "                   [bold cyan]S5 FalkorDB Exploit Knowledge Graph & Autonomous AI Triage Agent[/bold cyan]",
+            "[bold white]Architecture:[/bold white]       Engines S0–S4: 100% Offline & Standalone\n"
+            "                   Engine S5: FalkorDB GraphBLAS Connected Intelligence Engine\n"
+            "                   Autonomous AI Triage Agent with Multi-Hop Cypher Reasoning",
             title="[bold]Project Information[/bold]",
             border_style="cyan",
         )

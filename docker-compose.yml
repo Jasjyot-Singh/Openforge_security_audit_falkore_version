@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: shadowprint-falkordb
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    environment:
+      - FALKORDB_ARGS=--save ""
+    volumes:
+      - falkordb-data:/data
+
+volumes:
+  falkordb-data:

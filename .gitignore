@@ -22,6 +22,8 @@ output/
 *.db
 *.sqlite3
 shadowprint.db
+shadowprint_denylist.json
+
 
 # Testing & Linters
 .pytest_cache/
